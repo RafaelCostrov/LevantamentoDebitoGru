@@ -2,6 +2,7 @@ import datetime
 import os
 import time
 import base64
+import pyautogui
 from dotenv import load_dotenv
 from servico_google import acessando_sheets
 from envio_drive import salvar_drive
@@ -31,9 +32,22 @@ chrome_options.add_argument(
     "user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36")
 chrome_options.add_argument("--disable-blink-features=AutomationControlled")
 chrome_options.add_argument("--incognito")
-chrome_options.add_argument("--headless")
 chrome_options.add_experimental_option(
     "excludeSwitches", ["enable-automation"])
+chrome_options.add_argument("--allow-running-insecure-content")
+chrome_options.add_argument(
+    "----unsafely-treat-insecure-origin-as-secure=http://fazenda.guarulhos.sp.gov.br")
+pasta = os.path.join(os.path.expanduser("~"), "Temp")
+chrome_options.add_experimental_option("prefs", {
+    "download.default_directory": pasta,
+    "download.prompt_for_download": False,
+    "download.directory_upgrade": True,
+    "safebrowsing.enabled": True,
+    "safebrowsing.disable_download_protection": True,
+    "plugins.always_open_pdf_externally": True,
+})
+
+
 SERVICE = os.getenv('SERVICE')
 servico = Service(SERVICE)
 navegador = webdriver.Chrome(service=servico, options=chrome_options)
@@ -44,6 +58,20 @@ navegador.maximize_window()
 
 responsaveis_com_pasta = set()
 
+
+def esperar_download_pdf(pasta, cnpj, timeout=30):
+    tempo_inicial = time.time()
+    while time.time() - tempo_inicial < timeout:
+        arquivos = os.listdir(pasta)
+        for arquivo in arquivos:
+            if arquivo.endswith(".pdf") and cnpj in arquivo:
+                caminho_completo = os.path.join(pasta, arquivo)
+                if not arquivo.endswith(".crdownload") and os.path.exists(caminho_completo):
+                    return caminho_completo
+        time.sleep(1)
+    return None
+
+
 for i, (cnpj, resp, nome) in enumerate(zip(coluna_cnpj, coluna_resp, coluna_nome), start=2):
     while True:
         try:
@@ -53,7 +81,6 @@ for i, (cnpj, resp, nome) in enumerate(zip(coluna_cnpj, coluna_resp, coluna_nome
             extrato_debito = navegador.find_element(
                 By.XPATH, '//*[@id="P9_EXTRATO_DEBITO"]/div/div[2]/div/a')
             extrato_debito.click()
-
             tipo_inscricao = navegador.find_element(
                 By.XPATH, '//*[@id="P101_TIPO_INSCRICAO"]')
             tipo_inscricao.click()
@@ -71,7 +98,7 @@ for i, (cnpj, resp, nome) in enumerate(zip(coluna_cnpj, coluna_resp, coluna_nome
 
             try:
                 numero_inscricao = navegador.find_element(
-                    By.XPATH, '//*[@id="report_P101_REL_PESQUISA"]/tbody/tr[2]/td/table/tbody/tr[2]/td[1]')
+                    By.XPATH, '//*[@id="report_P101_REL_PESQUISA"]/tbody/tr[2]/td/table/tbody/tr[2]/td[1]/span')
                 numero_inscricao.click()
             except Exception as e:
                 botao_home = navegador.find_element(
@@ -80,58 +107,37 @@ for i, (cnpj, resp, nome) in enumerate(zip(coluna_cnpj, coluna_resp, coluna_nome
                 print(f"{cnpj}: sem inscricao municipal")
                 break
 
-            WebDriverWait(navegador, 30).until(
-                EC.presence_of_element_located(
-                    (By.XPATH, '//*[@id="container"]/div[2]/table/tbody/tr/td[1]/div/div/table/tbody/tr[5]/td/table/tbody/tr[1]/td'))
-            )
+            os.makedirs(pasta, exist_ok=True)
 
-            totais_element = navegador.find_element(
-                By.XPATH, "//td[contains(text(), 'Totais :')]//following-sibling::td")
-            valor_totais = totais_element.text
-            print(valor_totais)
+            dia = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+            caminho_arquivo = os.path.join(
+                pasta, f"{nome} - {cnpj} - {dia}.pdf")
+            caminho_arquivo = os.path.normpath(caminho_arquivo)
+            nome_arquivo = f"{nome} - {cnpj} - {dia}.pdf"
 
-            if valor_totais != "":
-                try:
+            time.sleep(5)
+            pyautogui.press('delete')
+            time.sleep(5)
+            pyautogui.write(caminho_arquivo)
+            time.sleep(5)
+            pyautogui.press('enter')
 
-                    dia = datetime.datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-                    nome_arquivo = f"{nome} - {cnpj} - {dia}.pdf"
-
-                    print_options = PrintOptions()
-                    print_options.shrink_to_fit = True
-                    print_options.orientation = 'portrait'
-                    pdf_content = navegador.print_page(print_options)
-
-                    try:
-                        pdf_bytes = base64.b64decode(pdf_content)
-                    except Exception as e:
-                        raise ValueError(f"Erro ao decodificar Base64: {e}")
-
-                    try:
-                        with open(nome_arquivo, "wb") as f:
-                            f.write(pdf_bytes)
-                    except Exception as e:
-                        raise IOError(f"Erro ao salvar o arquivo PDF: {e}")
-
-                except Exception as e:
-                    print(f"Erro inesperado: {e}")
-
-                if os.path.exists(nome_arquivo):
-                    pasta_id = salvar_drive(nome_arquivo, resp)
-                    responsaveis_com_pasta.add((resp, pasta_id))
-                    time.sleep(5)
-                    os.remove(nome_arquivo)
-                else:
-                    print("Erro: O arquivo PDF não foi gerado corretamente.")
-
+            caminho_arquivo = esperar_download_pdf(pasta, cnpj)
+            if caminho_arquivo:
+                pasta_id = salvar_drive(caminho_arquivo, nome_arquivo, resp)
+                responsaveis_com_pasta.add((resp, pasta_id))
+                time.sleep(5)
+                os.remove(caminho_arquivo)
             else:
-                print("Empresa com valor de debito zerado: " + nome)
+                print("Arquivo não encontrado!")
+
+            botao_voltar = navegador.find_element(
+                By.XPATH, '//*[@id="P101_VOLTAR"]')
+            botao_voltar.click()
 
             botao_home = navegador.find_element(
                 By.XPATH, '//*[@id="container"]/div[1]/div[1]/div[1]/a/div')
             botao_home.click()
-            botao_sair = navegador.find_element(
-                By.XPATH, '//*[@id="P9_DADOS"]/div/table/tbody/tr[1]/td[3]/a')
-            botao_sair.click()
             break
 
         except Exception as e:
