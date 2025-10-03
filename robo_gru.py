@@ -101,9 +101,9 @@ for i, (cnpj, resp, nome) in enumerate(zip(coluna_cnpj, coluna_resp, coluna_nome
                     By.XPATH, '//*[@id="report_P101_REL_PESQUISA"]/tbody/tr[2]/td/table/tbody/tr[2]/td[1]/span')
                 numero_inscricao.click()
             except Exception as e:
-                botao_home = navegador.find_element(
-                    By.XPATH, '//*[@id="container"]/div[1]/div[1]/div[1]/a/div')
-                botao_home.click()
+                botao_voltar = navegador.find_element(
+                    By.XPATH, '//*[@id="P101_VOLTAR"]')
+                botao_voltar.click()
                 print(f"{cnpj}: sem inscricao municipal")
                 break
 
