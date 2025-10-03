@@ -39,7 +39,7 @@ servico = Service(SERVICE)
 navegador = webdriver.Chrome(service=servico, options=chrome_options)
 
 navegador.switch_to.window(navegador.window_handles[0])
-navegador.get("https://fazenda.guarulhos.sp.gov.br/ords/guarulho/f?p=628:9")
+navegador.get("https://fazenda.guarulhos.sp.gov.br/")
 navegador.maximize_window()
 
 responsaveis_com_pasta = set()
@@ -48,7 +48,7 @@ for i, (cnpj, resp, nome) in enumerate(zip(coluna_cnpj, coluna_resp, coluna_nome
     while True:
         try:
             navegador.get(
-                "https://fazenda.guarulhos.sp.gov.br/ords/guarulho/f?p=628:9")
+                "https://fazenda.guarulhos.sp.gov.br/")
             navegador.maximize_window()
             extrato_debito = navegador.find_element(
                 By.XPATH, '//*[@id="P9_EXTRATO_DEBITO"]/div/div[2]/div/a')
